@@ -1,0 +1,5 @@
+- add simple rendered markdown section
+- Use text/markdown when copying
+- Get bolding for usernames working correctly
+- Add user icons
+- Add emojis
