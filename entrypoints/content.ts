@@ -1,13 +1,12 @@
-// content.js — runs on *.slack.com
-
 /**
  * Convert an HTML node tree (from the user's selection) into Markdown.
- * Currently handles: bold, italic, links, code, strikethrough, line breaks.
+ * Handles: bold, italic, links, code, strikethrough, line breaks,
+ * blockquotes, lists, and code blocks.
  */
-function htmlToMarkdown(node) {
+export function htmlToMarkdown(node: Node): string {
   // Text node — return its content
   if (node.nodeType === Node.TEXT_NODE) {
-    return node.textContent;
+    return node.textContent ?? "";
   }
 
   // Not an element — skip
@@ -15,11 +14,12 @@ function htmlToMarkdown(node) {
     return "";
   }
 
-  const tag = node.tagName.toLowerCase();
+  const el = node as HTMLElement;
+  const tag = el.tagName.toLowerCase();
 
   // Recurse into children first
   let inner = "";
-  for (const child of node.childNodes) {
+  for (const child of el.childNodes) {
     inner += htmlToMarkdown(child);
   }
 
@@ -50,7 +50,7 @@ function htmlToMarkdown(node) {
 
     // Links
     case "a": {
-      const href = node.getAttribute("href");
+      const href = el.getAttribute("href");
       if (href) {
         return `[${inner.trim()}](${href})`;
       }
@@ -81,10 +81,9 @@ function htmlToMarkdown(node) {
       return `\n${inner}\n`;
 
     case "li": {
-      const parent = node.parentElement;
+      const parent = el.parentElement;
       if (parent && parent.tagName.toLowerCase() === "ol") {
-        const index =
-          Array.from(parent.children).indexOf(node) + 1;
+        const index = Array.from(parent.children).indexOf(el) + 1;
         return `${index}. ${inner.trim()}\n`;
       }
       return `- ${inner.trim()}\n`;
@@ -100,7 +99,11 @@ function htmlToMarkdown(node) {
  * Get the user's selection as an HTML fragment, convert it, and
  * write the Markdown to the clipboard.
  */
-function copySelectionAsMarkdown() {
+export function copySelectionAsMarkdown(): {
+  success: boolean;
+  markdown?: string;
+  error?: string;
+} {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
     return { success: false, error: "Nothing selected" };
@@ -122,7 +125,7 @@ function copySelectionAsMarkdown() {
   // Write to clipboard
   navigator.clipboard.writeText(markdown).then(
     () => showToast("Copied as Markdown!"),
-    (err) => showToast(`Clipboard error: ${err}`)
+    (err) => showToast(`Clipboard error: ${err}`),
   );
 
   return { success: true, markdown };
@@ -131,7 +134,7 @@ function copySelectionAsMarkdown() {
 /**
  * Tiny non-intrusive toast notification so the user gets feedback.
  */
-function showToast(message) {
+export function showToast(message: string): void {
   const toast = document.createElement("div");
   toast.textContent = message;
   Object.assign(toast.style, {
@@ -156,11 +159,18 @@ function showToast(message) {
   }, 2000);
 }
 
-// Listen for messages from the background script (toolbar button / shortcut)
-browser.runtime.onMessage.addListener((msg) => {
-  if (msg.action === "copy-as-markdown") {
-    copySelectionAsMarkdown();
-  }
-});
+export default defineContentScript({
+  matches: ["*://*.slack.com/*"],
+  main() {
+    browser.runtime.onMessage.addListener((msg) => {
+      if (msg.action === "copy-as-markdown") {
+        copySelectionAsMarkdown();
+      }
+    });
 
-console.log("[Slack to Markdown] Content script loaded on", window.location.href);
+    console.log(
+      "[Slack to Markdown] Content script loaded on",
+      window.location.href,
+    );
+  },
+});
