@@ -1,3 +1,4 @@
+- Figure out what the integers between items are, and handle appropriately, probably be nuking them
 - Get bolding for usernames working correctly
 - Add user icons
 - Add emojis
