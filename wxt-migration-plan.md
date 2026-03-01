@@ -2,7 +2,7 @@
 
 ## Context
 
-The slack2md Firefox extension is currently a vanilla JS project (MV2, no build system, no dependencies). We're converting it to use WXT (latest, ~0.20.x) with TypeScript and pnpm as the package manager. This gives us a modern build pipeline, hot reloading during development, cross-browser support, and TypeScript type safety.
+The slack2md Firefox extension is currently a vanilla JS project (MV2, no build system, no dependencies). We're converting it to use WXT (latest, ~0.20.x) with TypeScript and pnpm as the package manager. This gives us a modern build pipeline, hot reloading during development, and TypeScript type safety. Target is Firefox only, staying on MV2.
 
 ## Target Structure
 
@@ -25,26 +25,30 @@ slack2md/
 ### 1. Initialize project with pnpm
 - Run `pnpm init` to create `package.json`
 - Run `pnpm add -D wxt` to install WXT
-- Set `name`, `version` (1.1.0), `description` in package.json
-- Add scripts: `dev`, `dev:firefox`, `build`, `build:firefox`, `zip`, `zip:firefox`, `postinstall`
+- Set `name` ("slack2md"), `version` ("1.1.0"), `description`, `"type": "module"`, `"private": true`
+- Add scripts:
+  - `"dev": "wxt -b firefox"`
+  - `"build": "wxt build -b firefox"`
+  - `"zip": "wxt zip -b firefox"`
+  - `"postinstall": "wxt prepare"`
 
 ### 2. Create `wxt.config.ts`
-- Use `defineConfig` (auto-imported)
-- Set manifest properties in MV3 format (WXT auto-converts for MV2/Firefox):
-  - `action: { default_icon: "icon.svg", default_title: "Copy Slack selection as Markdown" }`
-  - `permissions: ["clipboardWrite", "activeTab"]`
+- Import `defineConfig` from `'wxt'` (not auto-imported in config files)
+- Use MV2 manifest keys since we're targeting Firefox MV2:
+  - `browser_action: { default_icon: "icon.svg", default_title: "Copy Slack selection as Markdown" }`
+  - `permissions: ["activeTab"]` (drop `clipboardWrite` — the code uses `navigator.clipboard.writeText()` which doesn't need it)
   - `commands` with `copy-as-markdown` keyboard shortcut (Ctrl+Shift+M / MacCtrl+Shift+M)
   - `icons: { 48: "/icon.svg" }`
 
 ### 3. Create `entrypoints/background.ts`
 - Use `defineBackground(() => { ... })` shorthand
-- Inside `main`: register `browser.action.onClicked` listener (MV3 API; use `??` fallback for MV2 `browser.browserAction`)
-- Inside `main`: register `browser.commands.onCommand` listener for "copy-as-markdown"
+- Inside main: register `browser.browserAction.onClicked` listener (MV2 API)
+- Inside main: register `browser.commands.onCommand` listener for "copy-as-markdown"
 - Both send `{ action: "copy-as-markdown" }` message to active tab via `browser.tabs.sendMessage`
 
 ### 4. Create `entrypoints/content.ts`
 - Use `defineContentScript({ matches: ["*://*.slack.com/*"], main() { ... } })`
-- Move `htmlToMarkdown()`, `copySelectionAsMarkdown()`, and `showToast()` functions inside `main()` (or define them at module scope since they're pure functions that don't use browser APIs — only `main()` itself needs the message listener)
+- Define `htmlToMarkdown()`, `copySelectionAsMarkdown()`, and `showToast()` inside `main()` (all runtime code must be inside `main`)
 - Register `browser.runtime.onMessage` listener inside `main()`
 
 ### 5. Move `icon.svg` to `public/icon.svg`
@@ -64,16 +68,17 @@ Add: `.output/`, `.wxt/`, `node_modules/`
 - Remove `icon.svg` from root (moved to `public/`)
 
 ### 9. Update README.md
-- Update install instructions to reference `pnpm dev:firefox` for development
-- Update build instructions to reference `pnpm build:firefox`
+- Update install instructions to reference `pnpm dev` for development
+- Update build instructions to reference `pnpm build`
+- Fix existing errors: README says "Alt+Shift+C" and mentions a context menu — actual shortcut is Ctrl+Shift+M and there is no context menu
 
-### 10. Run `pnpm install` and `pnpm dev:firefox` to verify
+### 10. Run `pnpm install` and `pnpm dev` to verify
 
 ## Verification
 1. `pnpm install` succeeds without errors
-2. `pnpm dev:firefox` launches Firefox with the extension loaded
+2. `pnpm dev` launches Firefox with the extension loaded
 3. Navigate to any `*.slack.com` page
 4. Select text and click toolbar icon — text is copied as markdown
 5. Ctrl+Shift+M keyboard shortcut works
 6. Toast notification appears
-7. `pnpm build:firefox` produces output in `.output/`
+7. `pnpm build` produces output in `.output/`
