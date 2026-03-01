@@ -96,6 +96,23 @@ export function htmlToMarkdown(node: Node): string {
 }
 
 /**
+ * Write markdown to the clipboard with both text/plain and text/markdown
+ * MIME types. Falls back to writeText if clipboard.write() fails.
+ */
+export async function writeToClipboard(markdown: string): Promise<void> {
+  try {
+    const blobs: Record<string, Blob> = {
+      "text/plain": new Blob([markdown], { type: "text/plain" }),
+      "text/markdown": new Blob([markdown], { type: "text/markdown" }),
+    };
+    await navigator.clipboard.write([new ClipboardItem(blobs)]);
+  } catch (err) {
+    console.warn("[slack2md] clipboard.write() failed, falling back to writeText:", err);
+    await navigator.clipboard.writeText(markdown);
+  }
+}
+
+/**
  * Get the user's selection as an HTML fragment, convert it, and
  * write the Markdown to the clipboard.
  */
@@ -122,8 +139,8 @@ export function copySelectionAsMarkdown(): {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 
-  // Write to clipboard
-  navigator.clipboard.writeText(markdown).then(
+  // Write to clipboard with both text/plain and text/markdown
+  writeToClipboard(markdown).then(
     () => showToast("Copied as Markdown!"),
     (err) => showToast(`Clipboard error: ${err}`),
   );

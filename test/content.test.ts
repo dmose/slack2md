@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { htmlToMarkdown, copySelectionAsMarkdown, showToast } from "../entrypoints/content";
+import { htmlToMarkdown, copySelectionAsMarkdown, showToast, writeToClipboard } from "../entrypoints/content";
 
 /**
  * Helper: parse an HTML string and convert it via htmlToMarkdown.
@@ -101,7 +101,7 @@ describe("copySelectionAsMarkdown", () => {
     expect(result).toEqual({ success: false, error: "Nothing selected" });
   });
 
-  it("copies selected HTML as markdown to clipboard", () => {
+  it("copies selected HTML as markdown to clipboard", async () => {
     // Set up DOM content — using innerHTML for test fixture construction
     const el = document.createElement("div");
     // eslint-disable-next-line no-unsanitized/property -- test-only fixture
@@ -115,10 +115,11 @@ describe("copySelectionAsMarkdown", () => {
     selection.removeAllRanges();
     selection.addRange(range);
 
-    // Mock clipboard (navigator.clipboard is read-only in happy-dom)
+    // Mock clipboard with both write and writeText
+    const write = vi.fn().mockResolvedValue(undefined);
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
-      value: { writeText },
+      value: { write, writeText },
       writable: true,
       configurable: true,
     });
@@ -126,11 +127,62 @@ describe("copySelectionAsMarkdown", () => {
     const result = copySelectionAsMarkdown();
     expect(result.success).toBe(true);
     expect(result.markdown).toBe("**hello** world");
-    expect(writeText).toHaveBeenCalledWith("**hello** world");
+    expect(write).toHaveBeenCalledOnce();
+
+    // Verify clipboard content
+    await Promise.resolve();
+    const item = write.mock.calls[0][0][0] as ClipboardItem;
+    const plain = await item.getType("text/plain");
+    expect(await plain.text()).toBe("**hello** world");
 
     // Cleanup
     document.body.removeChild(el);
     selection.removeAllRanges();
+  });
+});
+
+describe("writeToClipboard", () => {
+  let writeFn: ReturnType<typeof vi.fn>;
+  let writeTextFn: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    writeFn = vi.fn().mockResolvedValue(undefined);
+    writeTextFn = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { write: writeFn, writeText: writeTextFn },
+      writable: true,
+      configurable: true,
+    });
+  });
+
+  it("writes both text/plain and text/markdown blobs", async () => {
+    await writeToClipboard("**hello** world");
+
+    expect(writeFn).toHaveBeenCalledOnce();
+    const item = writeFn.mock.calls[0][0][0] as ClipboardItem;
+    expect(item.types).toContain("text/plain");
+    expect(item.types).toContain("text/markdown");
+
+    const plain = await item.getType("text/plain");
+    expect(await plain.text()).toBe("**hello** world");
+    const md = await item.getType("text/markdown");
+    expect(await md.text()).toBe("**hello** world");
+  });
+
+  it("falls back to writeText when write() rejects", async () => {
+    writeFn.mockRejectedValueOnce(new DOMException("Not allowed"));
+
+    await writeToClipboard("fallback text");
+
+    expect(writeFn).toHaveBeenCalledOnce();
+    expect(writeTextFn).toHaveBeenCalledWith("fallback text");
+  });
+
+  it("rejects when both write() and writeText() fail", async () => {
+    writeFn.mockRejectedValueOnce(new DOMException("Not allowed"));
+    writeTextFn.mockRejectedValueOnce(new DOMException("Also not allowed"));
+
+    await expect(writeToClipboard("text")).rejects.toThrow("Also not allowed");
   });
 });
 
